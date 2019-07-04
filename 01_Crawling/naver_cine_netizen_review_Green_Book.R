@@ -1,8 +1,9 @@
 # NAVER 영화('그린북') 일반인 리뷰 크롤링
+install.packages('xlsx')
 library(rvest)
-library(stringr)
 library(dplyr)
-library(openxlsx)
+library(stringr)
+library(xlsx)
 
 trim <- function (x) gsub("^\\s+|\\s+$", "", x)
 
@@ -30,7 +31,7 @@ total2 <- ceiling(total1/10) # 소수점 이하 올림처리
 
 i <- 1
 df_reviews <- data.frame(score=c(), review=c(), writer=c(), time=c())
-wb <- createWorkbook()
+
 for (i in 1:total2){
   ifr_url_page <- paste0(url_base, url2, page, i) 
   html2 <- read_html(ifr_url_page)
@@ -61,9 +62,10 @@ for (i in 1:total2){
   review = data.frame(score=score, review=review, writer=writer, time=time)
   df_reviews <- rbind.data.frame(df_reviews, review)
 }
-str(df_reviews)
+head(df_reviews)
 
-addWorksheet(wb, 'reviews_GreenBook')
-writeDataTable(wb, 'reviews_GreenBook', df_reviews)
-saveWorkbook(wb, file="D:/Workspace/R-project/01_Crawling/reviews.xlsx")
+write.xlsx(df_reviews, file="D:/Workspace/R-project/01_Crawling/reviews_GreenBook.xlsx", 
+           sheetName="네티즌평점", 
+           col.names=TRUE, row.names=FALSE, append=FALSE)
+
 
