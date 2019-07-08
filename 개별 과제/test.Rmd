@@ -1,4 +1,21 @@
+---
+title: "개별과제 (GreenBook 평점 분석)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##  1. NAVER 영화('그린북') 일반인 리뷰 크롤링
 ```{r}
+library(KoNLP)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(rJava)
+library(wordcloud2)
+library(dplyr)
 library(rvest)
 library(dplyr)
 library(stringr)
@@ -66,118 +83,142 @@ head(df_reviews)
 write.xlsx(df_reviews, file="D:/Workspace/R-project/01_Crawling/reviews_GreenBook.xlsx", 
            sheetName="네티즌평점", 
            col.names=TRUE, row.names=FALSE, append=FALSE)
-# 일자별/시간대별 평점 분석
+```
+
+##  2. 네티즌 리플 워드클라우드 생성
+```{r}
 getwd()
 setwd('D:/Workspace/R-project/01_Crawling')
 data <- read.csv('reviews_GreenBook.csv', stringsAsFactors = F)
 str(data)
 
 data1 <- data %>% select(review)
-data2 <- sapply(data1, extractNoun, USE.NAMES = F)
-head(unlist(data2), 50)
+data2 <- sapply(data1, extractNoun, USE.NAMES = F) # 단어 추출
 data3 <- unlist(data2)
-head(data3, 30)
+head(data3, 100)
 
+# 데이터 전처리 1
+data3 <- gsub(" ","", data3)     # 공백 제거
 data3 <- gsub("\\d+","", data3)  # 숫자 제거
-data3 <- gsub(" ","", data3) # 공백 제거
-data3 <- gsub("-","", data3) # - 제거
+data3 <-  gsub("[][!#$%()*,.:;<=>@^_`|~.{}]", "", data3) # 특수문자 제거
 data3 <- Filter(function(x) {nchar(x) >= 2}, data3) # 한글자 제거
 
+# 공백 제거
 write(unlist(data3),"reviews_Greenbook.txt")
 data4 <- read.table("reviews_Greenbook.txt")
-nrow(data4) # 총 18,125 단어 추출
-wordcount <- table(data4)
-head(sort(wordcount, decreasing=T),100)
+head(sort(table(data4), decreasing = T), 100)
 
-txt <- readLines("greenbook_gsub.txt") # 제거 단어 목록
+# 제거 단어 목록
+txt <- readLines("greenbook_gsub.txt") 
 cnt_txt <- length(txt)
 
+# 데이터 전처리 2
 i <- 1
 for(i in 1:cnt_txt) {
   data3 <- gsub((txt[i]), "", data3)
 }
+# 공백 제거 2
+write(unlist(data3),"reviews_Greenbook_1.txt")
+data5 <- read.table("reviews_Greenbook_1.txt")
+head(sort(table(data5), decreasing = T), 100)
+nrow(data5) 
 
-write(unlist(data3),"reviews_Greenbook.txt")
-data4 <- read.table("reviews_Greenbook.txt")
-nrow(data4) # 총 14,980 단어 추출
-wordcount <- table(data4)
-head(sort(wordcount, decreasing=T),100)
+wordcount <- head(sort(table(data5), decreasing = T), 500)
+wordcloud2(wordcount, color = "random-light", backgroundColor = "black", size = 1)
 
-wordcount1 <- as.data.frame(wordcount) 
-head(arrange(wordcount1, desc(Freq)),100)
+```
 
-wordcount2 <- wordcount1 %>% filter(Freq >= 22)
-head(arrange(wordcount2, desc(Freq)),100)
-
-wordcloud2(wordcount2, color = "random-light", backgroundColor = "white", shape = 'circle')
-
-# 일자별/시간대별 평점 분석
-library(dplyr)
-library(lubridate)
-library(ggplot2)
-
+## 3. 일자별/시간대별 평점 분석
+```{r}
+# 문자열 datetime -> date, time 으로 분리 및 요일 생성
 data_1 <- data %>%
   mutate(DateTime = ymd_hm(time)) %>%
   mutate(Dates = format(as.POSIXct(strptime(DateTime,"%Y-%m-%d %H:%M:%S",tz="")) ,format = "%Y-%m-%d")) %>%
   mutate(Hours = format(as.POSIXct(strptime(DateTime,"%Y-%m-%d %H:%M:%S",tz="")) ,format = "%H:%M:%S")) %>%
-  mutate(Days = weekdays(as.Date(DateTime)))
+  mutate(Days = weekdays(as.Date(DateTime))) %>%
+  select(score, Dates, Hours, Days)
+str(data_1) ; head(data_1)
 
+# 날짜별 평균
 data_Dates <- data_1 %>%
   mutate(Dates = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%m/%d")) %>%
   group_by(Dates) %>%
   summarise(score_mean = mean(score))
+str(data_Dates); head(data_Dates)
 
+# 시간별 평균
 data_Hours <- data_1 %>%
   mutate(Hours = format(as.POSIXct(strptime(Hours,"%H:%M:%S",tz="")) ,format = "%H")) %>% 
   group_by(Hours) %>%
   summarise(score_mean = mean(score))
+str(data_Hours); head(data_Hours)
 
+# (기타)월별 평균
 data_Months <- data_1 %>%
-  mutate(Months = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%Y-%m")) %>%
+  mutate(Months = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%y-%m")) %>%
   group_by(Months) %>%
   summarise(score_mean = mean(score))
+str(data_Months); head(data_Months)
 
+# (기타)요일별 평균
 data_Days <- data_1 %>%
   group_by(Days) %>%
   summarise(score_mean = mean(score))
-
-head(data_Hours, 10)
-str(data_1)
-head(data_1)
-head(arrange(data_1, desc(Dates)),100)
-
+str(data_Days); head(data_Days)
+```
+### 날짜별 평점 추이
+```{r}
 ggplot(data_Dates, aes(Dates, score_mean, group = 1)) + 
-  geom_line(color = 'red', size = 1) +
-  ggtitle("GreenBook 날짜별 평점") +
+  geom_line(color = 'red', size = 0.5) +
+  ggtitle("GreenBook 날짜별 평점 추이") +
   labs(x = "날짜", y = "평점") +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
-  theme(axis.text.x = element_text(angle=90, hjust=1, size = 8))
+  theme(axis.text.x = element_text(angle=90, hjust=1, size = 5))
+```
 
-ggplot(data_Hours, aes(Hours, score_mean, group = 1)) + 
+#### 1월 부터 7월까지 평점은 꾸준히 9~10점을 나타내고 있다. 즉 시간이 지나도 평점의 변화는 크게 없다. 
+
+### 시간대별 평점 추이
+```{r}
+
+  ggplot(data_Hours, aes(Hours, score_mean, group = 1)) + 
   geom_line(color = 'red', size = 1) +
-  ggtitle("GreenBook 시간별 평점") +
+  ggtitle("GreenBook 시간별대 평점 추이") +
   labs(x = "시간", y = "평점") +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text.x = element_text(angle=0, hjust=1, size = 8))
+```
 
+#### 평점이 가장 높은 시간대는 오전 6시(9.897)이고, 가장 낮은 시간대는 오전 7시(9.474)이다.
+#### 하지만 그 차이는 0.423으로 미미하여, 시간대별 평점의 변화가 있다고 볼 수 없다.
+
+### (기타)월별 평점 추이
+```{r}
 ggplot(data_Months, aes(Months, score_mean, group = 1)) + 
   geom_line(color = 'red', size = 1) +
-  ggtitle("GreenBook 월별 평점") +
+  ggtitle("GreenBook 월별 평점 추이") +
   labs(x = "월", y = "평점") +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text = element_text(size = 10))
+```
 
+#### 평점이 가장 높은 달은 7월(9.714)이고, 가장 낮은 달은 6월(9.484)이다.
+#### 하지만 그 차이는 0.23으로 미미하여, 월별 평점의 변화가 있다고 볼 수 없다.
+
+### (기타)요일별 평점 추이
+```{r}
 ggplot(data_Days, aes(Days, score_mean, group = 1)) + 
   geom_line(color = 'red', size = 1) +
-  ggtitle("GreenBook 요일별 평점") +
+  ggtitle("GreenBook 요일별 평점 추이") +
   labs(x = "요일", y = "평점") +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text = element_text(size = 10)) +
   scale_x_discrete(limits=c("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"))
-  
 ```
 
+#### 평점이 가장 높은 요일은 일요일(9.683)이고, 가장 낮은 요일은 월요일(9.572)이다.
+#### 하지만 그 차이는 0.111으로 미미하여, 요일별 평점의 변화가 있다고 볼 수 없다.

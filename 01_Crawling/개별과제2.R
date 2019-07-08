@@ -6,6 +6,7 @@ install.packages('rJava')
 install.packages('lubridate')
 install.packages('ggplot2')
 install.packages('dplyr')
+install.packages("lawstat")
 library(KoNLP)
 library(dplyr)
 library(lubridate)
@@ -17,6 +18,7 @@ library(rvest)
 library(dplyr)
 library(stringr)
 library(xlsx)
+library(lawstat)
 
 trim <- function (x) gsub("^\\s+|\\s+$", "", x)
 
@@ -148,7 +150,7 @@ str(data_Hours); head(data_Hours)
 
 # (기타)월별 평균
 data_Months <- data_1 %>%
-  mutate(Months = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%y-%m")) %>%
+  mutate(Months = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%m")) %>%
   group_by(Months) %>%
   summarise(score_mean = mean(score))
 str(data_Months); head(data_Months)
@@ -159,6 +161,7 @@ data_Days <- data_1 %>%
   summarise(score_mean = mean(score))
 str(data_Days); head(data_Days)
 
+
 # 날짜별 평점 추이
 ggplot(data_Dates, aes(Dates, score_mean, group = 1)) + 
   geom_line(color = 'red', size = 0.5) +
@@ -167,16 +170,39 @@ ggplot(data_Dates, aes(Dates, score_mean, group = 1)) +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text.x = element_text(angle=90, hjust=1, size = 5))
-str(data_Dates) ; head(data_Dates)
+# 1월 부터 7월까지 평점은 꾸준히 9~10점을 보이고 있다. 즉 시간이 지나도 평점의 큰 변화는 없다. 
+summary(data_Dates)
 
 # 시간대별 평점 추이
-ggplot(data_Hours, aes(Hours, score_mean, group = 1)) + 
+  ggplot(data_Hours, aes(Hours, score_mean, group = 1)) + 
   geom_line(color = 'red', size = 1) +
   ggtitle("GreenBook 시간별대 평점 추이") +
   labs(x = "시간", y = "평점") +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text.x = element_text(angle=0, hjust=1, size = 8))
+
+# 시간대별 그루핑
+i <- 0
+for (i in 0:9) {
+  data_1[grep(paste0('^', '0', i, ':'), data_1$Hours), ]$Hours <- paste0(i, '시')
+}
+k <- 10
+for (k in 10:23) {
+  data_1[grep(paste0('^', k, ':'), data_1$Hours), ]$Hours <- paste0(k, '시')
+}
+
+# 1) 정규성 검정
+shapiro.test(data_1[data_1$Hours == '0시', ]$score) # p-value(2.2e-16) < 유의수준(0.05) 이므로 귀무가설 기각 / 그러나 정규성 만족한다고 가정
+
+# 2) 등분산성 검정
+levene.test(data_1$score, data_1$Hours) # Levene 검정은 표본이 정규성을 만족하든 만족하지 않든 상관없이 사용 가능
+                                        # p-value(0.3288) > 유의수준(0.05) 이므로 귀무가설 채택, 즉 등분산성 만족함
+
+# 3) 가설 검정
+ow <- lm(score ~ Hours, data_1)
+anova(ow)
+# 결론 : p-value(0.3288) > 유의수준(0.05) 이므로 귀무가설 채택 / 즉, 시간대별 평점 평균의 차이는 없다고 할 수 있다.
 
 # (기타)월별 평점 추이
 ggplot(data_Months, aes(Months, score_mean, group = 1)) + 
@@ -186,6 +212,22 @@ ggplot(data_Months, aes(Months, score_mean, group = 1)) +
   theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 15, color = "darkblue")) +
   theme(axis.title = element_text(face = "bold", size = 10)) +
   theme(axis.text = element_text(size = 10))
+
+# 월별 그루핑
+data_1_Months <- data_1 %>%
+  mutate(Months = format(as.POSIXct(strptime(Dates,"%Y-%m-%d",tz="")) ,format = "%m")) %>%
+  select(score, Months)
+  
+# 1) 정규성 검정
+shapiro.test(data_1_Months[data_1_Months$Months == '01', ]$score) # p-value(2.2e-16) < 유의수준(0.05) 이므로 귀무가설 기각 / 그러나 정규성 만족한다고 가정
+
+# 2) 등분산성 검정
+levene.test(data_1_Months$score, data_1_Months$Months) # p-value(0.5616) > 유의수준(0.05) 이므로 귀무가설 채택, 즉 등분산성 만족함
+
+# 3) 가설 검정
+ow <- lm(score ~ Months, data_1_Months)
+anova(ow)
+# 결론 : p-value(0.5616) > 유의수준(0.05) 이므로 귀무가설 채택 / 즉, 월별 평점 평균의 차이는 없다고 할 수 있다.
 
 # (기타)요일별 평점 추이
 ggplot(data_Days, aes(Days, score_mean, group = 1)) + 
@@ -197,8 +239,15 @@ ggplot(data_Days, aes(Days, score_mean, group = 1)) +
   theme(axis.text = element_text(size = 10)) +
   scale_x_discrete(limits=c("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"))
 
-# ggplot(data_Days, aes(Days, score_mean, fill = Days )) + 
-# geom_bar(stat = "identity") +
-# scale_x_discrete(limits=c("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"))
+# 1) 정규성 검정
+shapiro.test(data_1[data_1$Days == '월요일', ]$score) # p-value(2.2e-16) < 유의수준(0.05) 이므로 귀무가설 기각 / 그러나 정규성 만족한다고 가정
+
+# 2) 등분산성 검정
+levene.test(data_1$score, data_1$Days) # p-value(0.1761) > 유의수준(0.05) 이므로 귀무가설 채택, 즉 등분산성 만족함
+
+# 3) 가설 검정
+ow <- lm(score ~ Days, data_1)
+anova(ow)
+# 결론 : p-value(0.5616) > 유의수준(0.05) 이므로 귀무가설 채택 / 즉, 요일별 평점 평균의 차이는 없다고 할 수 있다.
 
 
